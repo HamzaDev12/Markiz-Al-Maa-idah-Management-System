@@ -1,0 +1,282 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+  PARENT
+  STUDENT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+}
+
+enum FeeStatus {
+  PAID
+  PARTIAL
+  PENDING
+}
+
+enum SalaryStatus {
+  PAID
+  PARTIAL
+  UNPAID
+}
+
+enum SabaqLevel {
+  GOOD
+  AVERAGE
+  BAD
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+}
+
+enum OTPPurpose {
+  VERIFY_ACCOUNT
+  LOGIN
+  RESET_PASSWORD
+}
+
+model User {
+  id           Int          @id @default(autoincrement())
+  fullName     String
+  email        String       @unique
+  phone        String?
+  password     String?
+  googleId     String?      @unique
+  authProvider AuthProvider @default(LOCAL)
+  role         Role
+  isVerified   Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+
+  student       Student?
+  parent        Parent?
+  teacher       Teacher?
+  otps          OTP[]
+  notifications Notification[]
+}
+
+model OTP {
+  id        Int        @id @default(autoincrement())
+  userId    Int
+  code      String
+  purpose   OTPPurpose
+  expiresAt DateTime
+  used      Boolean    @default(false)
+  createdAt DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Parent {
+  id     Int @id @default(autoincrement())
+  userId Int @unique
+
+  user     User            @relation(fields: [userId], references: [id])
+  students StudentParent[]
+  payments Payment[]
+}
+
+model Student {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @unique
+  gender         Gender
+  enrollmentDate DateTime @default(now())
+  active         Boolean  @default(true)
+
+  classId  Int?
+  halaqaId Int?
+
+  user   User    @relation(fields: [userId], references: [id])
+  class  Class?  @relation(fields: [classId], references: [id])
+  halaqa Halaqa? @relation("HalaqaStudents", fields: [halaqaId], references: [id])
+
+  leaderOf Halaqa? @relation("HalaqaLeader")
+
+  parents    StudentParent[]
+  attendance Attendance[]
+  results    Result[]
+  subac      Subcis[]
+  payments   PaymentStudent[]
+}
+
+model StudentParent {
+  id        Int @id @default(autoincrement())
+  studentId Int
+  parentId  Int
+
+  student Student @relation(fields: [studentId], references: [id])
+  parent  Parent  @relation(fields: [parentId], references: [id])
+
+  @@unique([studentId, parentId])
+}
+
+model Class {
+  id           Int    @id @default(autoincrement())
+  name         String
+  teacherId    Int
+  rank         Int?
+  averageScore Float?
+
+  teacher   Teacher         @relation(fields: [teacherId], references: [id])
+  halaqas   Halaqa[]
+  students  Student[]
+  schedules ClassSchedule[]
+  exams     Exam[]
+}
+
+model ClassSchedule {
+  id        Int      @id @default(autoincrement())
+  classId   Int
+  subject   String
+  teacherId Int
+  startTime DateTime
+  endTime   DateTime
+
+  class   Class   @relation(fields: [classId], references: [id])
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+}
+
+model Teacher {
+  id     Int   @id @default(autoincrement())
+  userId Int   @unique
+  salary Float
+
+  user       User                @relation(fields: [userId], references: [id])
+  classes    Class[]
+  halaqas    Halaqa[]
+  schedules  ClassSchedule[]
+  attendance TeacherAttendance[]
+  salaries   TeacherSalary[]
+}
+
+model TeacherAttendance {
+  id        Int              @id @default(autoincrement())
+  teacherId Int
+  date      DateTime
+  status    AttendanceStatus
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+}
+
+model TeacherSalary {
+  id          Int          @id @default(autoincrement())
+  teacherId   Int
+  totalSalary Float
+  paidAmount  Float
+  status      SalaryStatus
+  month       String
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+}
+
+model Halaqa {
+  id        Int    @id @default(autoincrement())
+  name      String
+  teacherId Int
+  classId   Int
+  leaderId  Int?   @unique
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+
+  leader   Student?  @relation("HalaqaLeader", fields: [leaderId], references: [id])
+  students Student[] @relation("HalaqaStudents")
+
+  subac Subcis[]
+}
+
+model Subcis {
+  id        Int        @id @default(autoincrement())
+  studentId Int
+  halaqaId  Int
+  juz       String
+  level     SabaqLevel
+  date      DateTime   @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+  halaqa  Halaqa  @relation(fields: [halaqaId], references: [id])
+}
+
+model Attendance {
+  id        Int              @id @default(autoincrement())
+  studentId Int
+  date      DateTime
+  status    AttendanceStatus
+
+  student Student @relation(fields: [studentId], references: [id])
+}
+
+model Exam {
+  id      Int      @id @default(autoincrement())
+  classId Int
+  name    String
+  date    DateTime
+
+  class   Class    @relation(fields: [classId], references: [id])
+  results Result[]
+}
+
+model Result {
+  id        Int @id @default(autoincrement())
+  examId    Int
+  studentId Int
+  marks     Int
+
+  exam    Exam    @relation(fields: [examId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+}
+
+model Payment {
+  id          Int       @id @default(autoincrement())
+  parentId    Int
+  totalAmount Float
+  status      FeeStatus
+  date        DateTime  @default(now())
+
+  parent Parent           @relation(fields: [parentId], references: [id])
+  items  PaymentStudent[]
+}
+
+model PaymentStudent {
+  id        Int   @id @default(autoincrement())
+  paymentId Int
+  studentId Int
+  amount    Float
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
