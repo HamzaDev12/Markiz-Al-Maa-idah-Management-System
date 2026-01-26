@@ -33,6 +33,9 @@ export const authenticationMiddleware = async (
       });
       return;
     }
+
+    req.userId = decode.userId;
+
     next();
   } catch (error) {
     return res.status(401).json({ message: "Unauthorized" });

@@ -48,30 +48,17 @@ enum SabaqLevel {
   BAD
 }
 
-enum AuthProvider {
-  LOCAL
-  GOOGLE
-}
-
-enum OTPPurpose {
-  VERIFY_ACCOUNT
-  LOGIN
-  RESET_PASSWORD
-}
-
 model User {
-  id           Int          @id @default(autoincrement())
-  fullName     String
-  email        String       @unique
-  phone        String?
-  password     String?
-  googleId     String?      @unique
-  authProvider AuthProvider @default(LOCAL)
-  role         Role
-  isVerified   Boolean      @default(false)
-  createdAt    DateTime     @default(now())
-
+  id            Int            @id @default(autoincrement())
+  fullName      String
+  email         String         @unique
+  phone         String
+  password      String
+  role          Role
+  createdAt     DateTime       @default(now())
   student       Student?
+  isActive      Boolean        @default(true)
+  isLogged      Boolean        @default(true)
   parent        Parent?
   teacher       Teacher?
   otps          OTP[]
@@ -79,13 +66,13 @@ model User {
 }
 
 model OTP {
-  id        Int        @id @default(autoincrement())
-  userId    Int
-  code      String
-  purpose   OTPPurpose
-  expiresAt DateTime
-  used      Boolean    @default(false)
-  createdAt DateTime   @default(now())
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  code       String
+  isVerified Boolean  @default(false)
+  expiresAt  DateTime
+  used       Boolean  @default(false)
+  createdAt  DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
 }
