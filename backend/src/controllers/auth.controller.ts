@@ -8,10 +8,17 @@ import {
 } from "../constants/messages.js";
 import argon2 from "argon2";
 import { prisma } from "../libs/prisma.js";
-import type { ICreateUser, ILoginUser } from "../types/auth.types.js";
+import type {
+  ICreateUser,
+  ILoginUser,
+  IUpdateUserByAdmin,
+  IUpdateUserBySelf,
+} from "../types/auth.types.js";
 import type { Role } from "../generated/prisma/enums.js";
 import { generateToken } from "../services/jwt.service.js";
 import type { AuthRequest } from "../utils/auth.utlis.js";
+import { generateCode } from "../services/code.service.js";
+import { sendEmail } from "../services/sendEmail.service.js";
 
 export const registerUser = async (req: Request, res: Response) => {
   try {
@@ -237,6 +244,384 @@ export const userDeleteTemporery = async (req: Request, res: Response) => {
     });
 
     shorRes(res, 200, "user successfully deleted");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const getUserRecyclePin = async (req: Request, res: Response) => {
+  try {
+    const isActive = await prisma.user.findMany({
+      where: {
+        isActive: true,
+      },
+    });
+
+    if (!isActive) {
+      shorRes(res, 404, "zNo deleted user");
+      return;
+    }
+
+    shorRes(res, 200, "", isActive);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const restorUser = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!id) {
+      shorRes(res, 404, "you must provide ID");
+      return;
+    }
+    const user = await prisma.user.findFirst({
+      where: {
+        id,
+      },
+    });
+
+    if (user?.isActive) {
+      shorRes(res, 404, "user already is not deleted");
+      return;
+    }
+
+    await prisma.user.update({
+      where: {
+        id,
+      },
+      data: {
+        isActive: true,
+      },
+    });
+
+    shorRes(res, 200, "user seccessfully restored");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const updateUserByAdmin = async (req: Request, res: Response) => {
+  try {
+    const data = req.body as IUpdateUserByAdmin;
+    if (data.id === null) {
+      shorRes(res, 400, "enter user id");
+      return;
+    }
+
+    if (!data.name || !data.phone || !data.role) {
+      shorRes(res, 400, "please fill all inputs");
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: data.id,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 400, "user is not exist");
+      return;
+    }
+
+    await prisma.user.update({
+      where: {
+        id: data.id,
+      },
+      data: {
+        fullName: data.name,
+        role: data.role as Role,
+        phone: data.phone,
+      },
+    });
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const updateUserByself = async (req: AuthRequest, res: Response) => {
+  try {
+    const data = req.body as IUpdateUserBySelf;
+    if (data.id === null) {
+      shorRes(res, 400, "Please enter your id");
+      return;
+    }
+
+    if (
+      data.OldPassword === "" ||
+      data.confirm === "" ||
+      data.email === "" ||
+      data.name === "" ||
+      data.newPassword === "" ||
+      data.phone === "" ||
+      data.role === ""
+    ) {
+      shorRes(res, 400, "please fill all the inputs");
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: data.id,
+      },
+    });
+    if (!user) {
+      shorRes(res, 400, "user is not exist");
+      return;
+    }
+
+    const isMatch = await argon2.verify(user.password, data.OldPassword);
+    if (!isMatch) {
+      shorRes(res, 400, "your old password is not correct");
+      return;
+    }
+
+    if (data.newPassword !== data.confirm) {
+      shorRes(res, 400, "the password must mutch a cofirm password");
+      return;
+    }
+
+    const isHash = await argon2.hash(data.newPassword);
+
+    const updated = await prisma.user.update({
+      where: {
+        id: data.id,
+      },
+      data: {
+        fullName: data.name,
+        email: data.email,
+        phone: data.phone,
+        role: data.role as Role,
+        password: isHash,
+      },
+    });
+
+    shorRes(res, 200, "Successfully updated", updated);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const updateSome = async (req: AuthRequest, res: Response) => {
+  try {
+    const data = req.body as IUpdateUserBySelf;
+    const user = await prisma.user.findFirst({
+      where: {
+        id: data.id,
+      },
+    });
+
+    if (!user) {
+      res.status(400).json({
+        message: "user is not exist",
+      });
+      return;
+    }
+    if (!data.OldPassword || !data.confirm || !data.name || !data.newPassword) {
+      shorRes(res, 400, "please fill all inputs");
+      return;
+    }
+
+    const isMatch = await argon2.verify(user.password, data.OldPassword);
+    if (!isMatch) {
+      shorRes(res, 400, "your old password is not correct");
+      return;
+    }
+
+    if (data.newPassword !== data.confirm) {
+      shorRes(res, 400, "the password must mutch a cofirm password");
+      return;
+    }
+
+    const hash = await argon2.hash(data.newPassword);
+
+    await prisma.user.update({
+      where: {
+        id: data.id,
+      },
+      data: {
+        fullName: data.name,
+        password: hash,
+        role: data.role as Role,
+      },
+    });
+
+    shorRes(res, 200, "Successfully changed your password");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const updateName = async (req: AuthRequest, res: Response) => {
+  try {
+    const { fullName } = req.body;
+    const userId = req.userId;
+
+    if (!userId) {
+      shorRes(res, 401, "user ID is not provided");
+      return;
+    }
+
+    if (!fullName || fullName.trim().length < 3) {
+      shorRes(res, 400, "Please enter a valid name");
+      return;
+    }
+
+    if (typeof fullName !== "string") {
+      shorRes(res, 400, "Invalid name format");
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { fullName },
+    });
+
+    shorRes(res, 200, "Successfully changed your name");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const deleteUserByAdmin = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      shorRes(res, 400, "user ID is not provided");
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: +id,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "user is not found");
+      return;
+    }
+
+    await prisma.user.delete({
+      where: {
+        id: user.id,
+      },
+    });
+
+    shorRes(res, 200, `user ${user.id} deleted permenantly`);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const deleteUserBySelf = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.userId;
+
+    if (!id) {
+      shorRes(res, 400, "user ID is not provided");
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: id,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "user is not found");
+      return;
+    }
+
+    await prisma.user.delete({
+      where: {
+        id: user.id,
+      },
+    });
+
+    shorRes(res, 200, `user ${user.id} deleted permenantly`);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const changeRole = async (req: Request, res: Response) => {
+  try {
+    const { role, id }: { role: Role; id: number } = req.body;
+
+    if (id === null) {
+      shorRes(res, 400, "user ID is not provided");
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "user not found");
+      return;
+    }
+
+    if (user.role == role) {
+      shorRes(res, 400, `user role is already ${role}`);
+      return;
+    }
+
+    await prisma.user.update({
+      where: {
+        id,
+      },
+      data: {
+        role,
+      },
+    });
+
+    shorRes(res, 200, `user successfully changes role to: ${role}`);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const sendEmailCode = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.userId) {
+      shorRes(res, 400, "user ID is not provided");
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: req.userId,
+      },
+    });
+
+    if (!user) shorRes(res, 404, "user is not found");
+    if (!user?.email) shorRes(res, 400, "user have not email");
+
+    const code = generateCode();
+    const expire = new Date(Date.now() + 2 * 60 * 1000);
+
+    await prisma.oTP.create({
+      data: {
+        code,
+        expiresAt: expire,
+        userId: req.userId,
+      },
+    });
+
+    await sendEmail(
+      user?.email!,
+      "Markiz Al-Maa'idah Verification code",
+      `${code} is your verification code. For your security do not share this code`,
+    );
+
+    shorRes(res, 200, "Verification code sent successfully");
   } catch (error) {
     cathError(error, res);
   }

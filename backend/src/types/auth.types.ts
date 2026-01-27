@@ -11,3 +11,21 @@ export interface ILoginUser {
   email: string;
   password: string;
 }
+
+export interface IUpdateUserByAdmin {
+  id: number;
+  name: string;
+  role: string;
+  phone: string;
+}
+
+export interface IUpdateUserBySelf {
+  id: number;
+  name: string;
+  OldPassword: string;
+  role: string;
+  newPassword: string;
+  confirm: string;
+  phone: string;
+  email: string;
+}
