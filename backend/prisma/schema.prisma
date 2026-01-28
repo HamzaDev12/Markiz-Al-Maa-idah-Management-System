@@ -59,6 +59,8 @@ model User {
   student       Student?
   isActive      Boolean        @default(true)
   isLogged      Boolean        @default(true)
+  isEmailVerify Boolean        @default(false)
+  isPhoneVerify Boolean        @default(false)
   parent        Parent?
   teacher       Teacher?
   otps          OTP[]

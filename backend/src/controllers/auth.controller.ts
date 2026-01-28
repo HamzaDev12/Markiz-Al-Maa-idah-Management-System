@@ -19,6 +19,7 @@ import { generateToken } from "../services/jwt.service.js";
 import type { AuthRequest } from "../utils/auth.utlis.js";
 import { generateCode } from "../services/code.service.js";
 import { sendEmail } from "../services/sendEmail.service.js";
+import { sendWhatsApp } from "../services/whatsApp.service.js";
 
 export const registerUser = async (req: Request, res: Response) => {
   try {
@@ -622,6 +623,203 @@ export const sendEmailCode = async (req: AuthRequest, res: Response) => {
     );
 
     shorRes(res, 200, "Verification code sent successfully");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const sendPhoneCode = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: req.userId!,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "user not found");
+      return;
+    }
+
+    const phone = user.phone;
+    const expire = new Date(Date.now() + 2 * 60 * 1000);
+    const code = generateCode();
+
+    if (!phone) {
+      shorRes(res, 400, "Please enter phone number");
+      return;
+    }
+
+    await prisma.oTP.create({
+      data: {
+        code,
+        expiresAt: expire,
+        userId: user.id,
+      },
+    });
+
+    await sendWhatsApp(
+      phone,
+      `${code} is your verification code. For your security do not share this code`,
+    );
+
+    shorRes(res, 200, "Verification code sent successfully");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const verifyEmail = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: req.userId!,
+      },
+    });
+    if (!user) {
+      shorRes(res, 400, "user ID is not provided");
+      return;
+    }
+
+    const { code } = req.body;
+
+    if (!code) {
+      shorRes(res, 400, "please enter your verification code");
+      return;
+    }
+
+    if (user.isEmailVerify) {
+      shorRes(res, 400, "user already verified");
+      return;
+    }
+
+    const cofirmCode = await prisma.oTP.findFirst({
+      where: {
+        userId: user.id,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (!cofirmCode) {
+      shorRes(res, 404, "No verification code registered");
+      return;
+    }
+
+    if (cofirmCode.expiresAt.getTime() < Date.now()) {
+      await prisma.oTP.delete({
+        where: {
+          id: cofirmCode.id,
+        },
+      });
+      shorRes(res, 400, "Verification code expired");
+      return;
+    }
+
+    if (cofirmCode.code !== code) {
+      shorRes(res, 400, "Verification code incorrect");
+      return;
+    }
+
+    const verified = await prisma.user.update({
+      where: {
+        id: user.id,
+      },
+      data: {
+        isEmailVerify: true,
+      },
+    });
+
+    await prisma.oTP.update({
+      where: {
+        id: cofirmCode.id,
+      },
+      data: {
+        isVerified: true,
+      },
+    });
+
+    shorRes(res, 200, "Verification successful");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const verfyPhone = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: req.userId!,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "user not found");
+      return;
+    }
+
+    const { code } = req.body;
+
+    if (!code) {
+      shorRes(res, 400, "please enter your verification code");
+      return;
+    }
+
+    if (user.isPhoneVerify) {
+      shorRes(res, 400, "user already verified");
+      return;
+    }
+
+    const confirmCode = await prisma.oTP.findFirst({
+      where: {
+        userId: req.userId!,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (!confirmCode) {
+      shorRes(res, 404, "No verification code registered");
+      return;
+    }
+
+    if (confirmCode.expiresAt.getTime() < Date.now()) {
+      await prisma.oTP.delete({
+        where: {
+          id: confirmCode.id,
+        },
+      });
+
+      shorRes(res, 400, "Verification code expired");
+      return;
+    }
+
+    if (confirmCode.code !== code) {
+      shorRes(res, 400, "Verification code incorrect");
+      return;
+    }
+
+    await prisma.user.update({
+      where: {
+        id: user.id,
+      },
+      data: {
+        isPhoneVerify: true,
+      },
+    });
+
+    await prisma.oTP.update({
+      where: {
+        id: confirmCode.id,
+      },
+      data: {
+        isVerified: true,
+      },
+    });
+
+    shorRes(res, 200, "Verification code successfully");
   } catch (error) {
     cathError(error, res);
   }

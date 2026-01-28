@@ -15,10 +15,10 @@ export const shorRes = (
   res: Response,
   statusCode: number,
   message: string,
-  object?: any,
+  data?: any,
 ) => {
   res.status(statusCode).json({
     message,
-    object,
+    data,
   });
 };
