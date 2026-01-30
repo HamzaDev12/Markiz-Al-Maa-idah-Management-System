@@ -14,6 +14,7 @@ export const sendNotifications = async (
       },
     });
   } catch (error) {
-    console.log("Error Sending Notification");
+    console.log("Error Sending Notification", error);
+    throw new Error("Error Sending Notification");
   }
 };

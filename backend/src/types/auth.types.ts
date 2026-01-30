@@ -29,3 +29,10 @@ export interface IUpdateUserBySelf {
   phone: string;
   email: string;
 }
+
+export interface ISendMessage {
+  email: string;
+  name: string;
+  message: string;
+  subject: string;
+}

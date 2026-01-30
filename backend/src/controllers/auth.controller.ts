@@ -11,90 +11,109 @@ import { prisma } from "../libs/prisma.js";
 import type {
   ICreateUser,
   ILoginUser,
+  ISendMessage,
   IUpdateUserByAdmin,
   IUpdateUserBySelf,
 } from "../types/auth.types.js";
-import type { Role } from "../generated/prisma/enums.js";
+import { Role } from "../generated/prisma/enums.js";
 import { generateToken } from "../services/jwt.service.js";
 import type { AuthRequest } from "../utils/auth.utlis.js";
 import { generateCode } from "../services/code.service.js";
-import { sendEmail } from "../services/sendEmail.service.js";
+import { sendEmail, sendEmailMessage } from "../services/sendEmail.service.js";
 import { sendWhatsApp } from "../services/whatsApp.service.js";
+import multer from "multer";
+import cloudinary from "../services/cloudinary.service.js";
 
-export const registerUser = async (req: Request, res: Response) => {
-  try {
-    const data: ICreateUser = req.body;
-    if (
-      !data.confirm ||
-      !data.name ||
-      !data.password ||
-      !data.phone ||
-      !data.role ||
-      !data.email
-    ) {
-      res.status(400).json({
-        message: fill,
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads");
+  },
+  filename: function (req, file, cb) {
+    cb(null, file.originalname);
+  },
+});
+
+const uploads = multer({ storage });
+
+export const registerUser = [
+  uploads.single("image"),
+  async (req: Request, res: Response) => {
+    try {
+      const data: ICreateUser = req.body;
+      const image = req.file ? req.file.filename : null;
+      if (
+        !data.confirm ||
+        !data.name ||
+        !data.password ||
+        !data.phone ||
+        !data.role ||
+        !data.email
+      ) {
+        res.status(400).json({
+          message: fill,
+        });
+        return;
+      }
+
+      const email = await prisma.user.findFirst({
+        where: {
+          email: data.email,
+        },
       });
-      return;
-    }
 
-    const email = await prisma.user.findFirst({
-      where: {
-        email: data.email,
-      },
-    });
+      if (!email) {
+        res.status(400).json({
+          message: "email already exist",
+        });
+        return;
+      }
 
-    if (!email) {
-      res.status(400).json({
-        message: "email already exist",
+      const phone = await prisma.user.findFirst({
+        where: {
+          phone: data.phone,
+        },
       });
-      return;
-    }
 
-    const phone = await prisma.user.findFirst({
-      where: {
-        phone: data.phone,
-      },
-    });
+      if (!phone) {
+        res.status(400).json({
+          message: "email already exist",
+        });
+        return;
+      }
 
-    if (!phone) {
-      res.status(400).json({
-        message: "email already exist",
+      if (data.confirm !== data.password) {
+        res.status(400).json({
+          message: "The password must match confirm password",
+        });
+        return;
+      }
+
+      const hashPassword = await argon2.hash(data.password);
+
+      const newUser = await prisma.user.create({
+        data: {
+          email: data.email,
+          fullName: data.name,
+          password: hashPassword,
+          role: data.role as Role,
+          phone: data.phone,
+          image,
+        },
       });
-      return;
-    }
 
-    if (data.confirm !== data.password) {
-      res.status(400).json({
-        message: "The password must match confirm password",
+      if (!newUser) {
+        throw new Error("Error while creating new user");
+      }
+      generateToken(newUser.id, res);
+      res.status(201).json({
+        message: "Successfully Created",
+        user: newUser,
       });
-      return;
+    } catch (error) {
+      cathError(error, res);
     }
-
-    const hashPassword = await argon2.hash(data.password);
-
-    const newUser = await prisma.user.create({
-      data: {
-        email: data.email,
-        fullName: data.name,
-        password: hashPassword,
-        role: data.role as Role,
-        phone: data.phone,
-      },
-    });
-
-    if (!newUser) {
-      throw new Error("Error while creating new user");
-    }
-    generateToken(newUser.id, res);
-    res.status(201).json({
-      message: "Successfully Created",
-      user: newUser,
-    });
-  } catch (error) {
-    cathError(error, res);
-  }
-};
+  },
+];
 
 export const loginUser = async (req: Request, res: Response) => {
   try {
@@ -820,6 +839,356 @@ export const verfyPhone = async (req: AuthRequest, res: Response) => {
     });
 
     shorRes(res, 200, "Verification code successfully");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const verifyResetCode = async (req: Request, res: Response) => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      shorRes(res, 400, "please fill the inputs");
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        email,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "user not found");
+      return;
+    }
+
+    const cofirmCode = await prisma.oTP.findFirst({
+      where: {
+        userId: user.id,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (!cofirmCode) {
+      shorRes(res, 404, "No verification code registered");
+      return;
+    }
+
+    if (cofirmCode.expiresAt.getTime() < Date.now()) {
+      await prisma.oTP.delete({
+        where: {
+          id: cofirmCode.id,
+        },
+      });
+
+      shorRes(res, 400, "Verification code expired");
+      return;
+    }
+
+    if (cofirmCode !== code) {
+      shorRes(res, 400, "Incorrect verification code");
+      return;
+    }
+
+    await prisma.oTP.update({
+      where: {
+        id: cofirmCode.id,
+      },
+      data: {
+        isVerified: true,
+      },
+    });
+
+    shorRes(
+      res,
+      200,
+      "Verification code is correct, proceed to reset password",
+    );
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const resetPassword = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+
+    const { newPassword, cofirmPassword } = req.body;
+
+    if (!newPassword || !cofirmPassword) {
+      shorRes(res, 400, "Please enter your new password");
+      return;
+    }
+
+    if (newPassword !== cofirmPassword) {
+      shorRes(res, 400, "the password must mutch a cofirm password");
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: userId!,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "user not found");
+      return;
+    }
+
+    const verification = await prisma.oTP.findFirst({
+      where: {
+        userId: user.id,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (!verification) {
+      shorRes(res, 404, "verification code not found");
+      return;
+    }
+
+    if (!verification.isVerified) {
+      shorRes(res, 400, "Not verified");
+      return;
+    }
+
+    const hashPassword = await argon2.hash(newPassword);
+
+    await prisma.user.update({
+      where: {
+        id: user.id,
+      },
+      data: {
+        password: hashPassword,
+      },
+    });
+
+    shorRes(res, 200, "password changed successfully");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const refreshToken = async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      shorRes(res, 401, "Unauthorized - no refresh token provided");
+      return;
+    }
+
+    const refreshToken = authHeader.split(" ")[1];
+
+    const decod = jwt.verify(
+      refreshToken as string,
+      process.env.JWT_REFRESH_TOKEN!,
+    ) as { userId: number };
+
+    const accessToken = jwt.sign(
+      { userId: decod.userId },
+      process.env.JWT_SECRET_KEY!,
+      { expiresIn: "15m" },
+    );
+
+    res.status(201).json({
+      accessToken,
+    });
+
+    res.status(200).json({});
+  } catch (error) {
+    shorRes(res, 401, "Unauthorized - invalid or expired refresh token");
+  }
+};
+
+export const sendEmailMessages = async (req: Request, res: Response) => {
+  try {
+    const { message, email, name, subject } = req.body as ISendMessage;
+
+    if (!message || !email || !name || !subject) {
+      shorRes(res, 400, "please fill inputs");
+      return;
+    }
+
+    await sendEmailMessage(email, message, subject);
+
+    shorRes(res, 200, "Email sended successfully");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const forgetPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      shorRes(res, 400, "email is required");
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        email,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "user not found");
+      return;
+    }
+
+    if (!user.email) {
+      shorRes(res, 400, "user have not emial");
+      return;
+    }
+
+    const code = generateCode();
+    const expire = new Date(Date.now() + 2 * 60 * 1000);
+
+    await prisma.oTP.create({
+      data: {
+        code,
+        expiresAt: expire,
+        userId: user.id,
+      },
+    });
+
+    await sendEmail(
+      user?.email!,
+      "Markiz Al-Maa'idah Verification code",
+      `${code} is your verification code. For your security do not share this code`,
+    );
+    shorRes(res, 200, "Verification code sent successfully");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const getAllusers = async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const status = (req.query.status as string) || "all";
+    const role = (req.query.role as string) || "all";
+
+    let where: any = {};
+
+    if (status === "active") where.isActive = true;
+    if (status === "suspend") where.isActive = false;
+
+    if (role === Role.ADMIN) where.role = Role.ADMIN;
+    if (role === Role.PARENT) where.role = Role.PARENT;
+    if (role === Role.STUDENT) where.role = Role.STUDENT;
+    if (role === Role.TEACHER) where.role = Role.TEACHER;
+
+    const [users, usersCount, activrCount, suspendCount] = await Promise.all([
+      prisma.user.findMany({
+        skip,
+        take: limit,
+        where,
+        select: {
+          id: true,
+          image: true,
+          fullName: true,
+          email: true,
+          isActive: true,
+          phone: true,
+          role: true,
+        },
+      }),
+      prisma.user.count({ where }),
+      prisma.user.count({ where: { ...where, isActive: true } }),
+      prisma.user.count({ where: { ...where, isActive: false } }),
+    ]);
+
+    res.status(200).json({
+      users,
+      number: usersCount || 0,
+      activeCount: activrCount || 0,
+      suspendCount: suspendCount || 0,
+      pagination: {
+        page,
+        limit,
+        totalPages: usersCount > 0 ? Math.ceil(usersCount / limit) : 0,
+      },
+    });
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const getSingleUser = async (req: Request, res: Response) => {
+  try {
+    const { id }: { id: number } = req.body;
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id,
+      },
+      select: {
+        id: true,
+        image: true,
+        fullName: true,
+        email: true,
+        isActive: true,
+        phone: true,
+        role: true,
+      },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "user not found");
+      return;
+    }
+
+    shorRes(res, 200, "user found", user);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const changeImage = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.userId) {
+      shorRes(res, 401, "No user ID provided");
+      return;
+    }
+
+    if (!req.file) {
+      shorRes(res, 400, "No image provided");
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+    });
+
+    if (!user) {
+      shorRes(res, 404, "User not found");
+      return;
+    }
+
+    const cloudinaryImage = await cloudinary.uploader.upload(req.file.path, {
+      folder: "uploads",
+    });
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.userId },
+      data: {
+        image: cloudinaryImage.secure_url,
+      },
+    });
+
+    shorRes(res, 200, "Image updated successfully", updatedUser);
   } catch (error) {
     cathError(error, res);
   }

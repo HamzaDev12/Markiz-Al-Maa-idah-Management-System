@@ -61,6 +61,7 @@ model User {
   isLogged      Boolean        @default(true)
   isEmailVerify Boolean        @default(false)
   isPhoneVerify Boolean        @default(false)
+  image         String?
   parent        Parent?
   teacher       Teacher?
   otps          OTP[]
@@ -148,9 +149,10 @@ model ClassSchedule {
 }
 
 model Teacher {
-  id     Int   @id @default(autoincrement())
-  userId Int   @unique
+  id     Int     @id @default(autoincrement())
+  userId Int     @unique
   salary Float
+ 
 
   user       User                @relation(fields: [userId], references: [id])
   classes    Class[]
