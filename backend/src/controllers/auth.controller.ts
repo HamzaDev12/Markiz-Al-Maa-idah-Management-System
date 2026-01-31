@@ -1130,7 +1130,7 @@ export const getSingleUser = async (req: Request, res: Response) => {
   try {
     const { id }: { id: number } = req.body;
 
-    const user = await prisma.user.findFirst({
+    const user = await prisma.user.findUnique({
       where: {
         id,
       },
