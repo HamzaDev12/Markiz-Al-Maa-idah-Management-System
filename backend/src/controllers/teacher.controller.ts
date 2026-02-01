@@ -679,15 +679,20 @@ export const teacherAttendanceHistory = async (
     const percentageAbsent =
       total > 0 ? ((absent / total) * 100).toFixed(2) : "0";
 
-    shorRes(res, 200, "imaanshaha si guul leh ayaa loo heley", {
-      data: attendance,
-      summary: {
-        absent,
-        present,
-        percentage,
-        percentageAbsent,
+    shorRes(
+      res,
+      200,
+      "imaanshaha iyo maqnaanshaha macalinka si guul leh ayaa loo heley",
+      {
+        data: attendance,
+        summary: {
+          absent,
+          present,
+          percentage,
+          percentageAbsent,
+        },
       },
-    });
+    );
   } catch (error) {
     cathError(error, res);
   }
