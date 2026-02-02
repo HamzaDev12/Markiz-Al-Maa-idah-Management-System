@@ -3,6 +3,7 @@ import type { AuthRequest } from "../utils/auth.utlis.js";
 import { cathError, shorRes } from "../constants/messages.js";
 import { prisma } from "../libs/prisma.js";
 import { Role } from "../generated/prisma/enums.js";
+import type { IUpdateStudent } from "../types/student.types.js";
 
 export const createStudent = async (req: AuthRequest, res: Response) => {
   try {
@@ -126,6 +127,659 @@ export const createStudent = async (req: AuthRequest, res: Response) => {
     });
 
     shorRes(res, 201, "ardayga si guul leh ayaa loo abuuray", student);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const updateStudent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { studentId } = req.params;
+    const { fullName, email, gender, phone, image } =
+      req.body as IUpdateStudent;
+
+    if (!studentId || isNaN(Number(studentId))) {
+      shorRes(res, 400, "id sax maaha");
+      return;
+    }
+
+    if (!["MALE", "FEMALE"].includes(gender)) {
+      shorRes(res, 400, "jinsiyadaadu sax mahan");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(studentId),
+      },
+      include: { user: true },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    if (email && email !== student.user.email) {
+      const existingEmail = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (existingEmail) {
+        shorRes(res, 400, "email-kan hore ayuu u jiray");
+        return;
+      }
+    }
+
+    if (phone && phone !== student.user.phone) {
+      const existingPhone = await prisma.user.findFirst({
+        where: {
+          phone: phone,
+        },
+      });
+      if (existingPhone) {
+        shorRes(res, 400, "phone-kan hore ayuu u jiray");
+        return;
+      }
+    }
+
+    const update = await prisma.$transaction(async (tx) => {
+      if (email || fullName || image || phone) {
+        await prisma.user.update({
+          where: { id: student.userId },
+          data: {
+            ...(fullName && { fullName }),
+            ...(image && { image }),
+            ...(email && { email }),
+            ...(phone && { phone }),
+          },
+        });
+      }
+
+      const updateStudent = await prisma.student.update({
+        where: { id: Number(studentId) },
+        data: {
+          ...(gender && { gender }),
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              phone: true,
+              image: true,
+            },
+          },
+          class: true,
+          halaqa: true,
+        },
+      });
+      return updateStudent;
+    });
+
+    shorRes(res, 200, "ardayga si guul leh ayaa loo badalay", update);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const activeStudent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const active: boolean = req.body;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { id: Number(id) },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    if (student.active === false) {
+      shorRes(res, 400, "ardaygan hore ayuu ahaa mid shaqada laga joojiyay");
+      return;
+    }
+
+    await prisma.student.update({
+      where: { id: Number(id) },
+      data: {
+        active: false,
+      },
+    });
+    shorRes(res, 200, "si guul leh ayaa ardayga shaqada looga joojiyay");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const deActiveStudent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const active: boolean = req.body;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { id: Number(id) },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    if (student.active === true) {
+      shorRes(res, 400, "ardaygan hore ayuu ahaa mid shaqada ku jira");
+      return;
+    }
+
+    await prisma.student.update({
+      where: { id: Number(id) },
+      data: {
+        active: true,
+      },
+    });
+
+    shorRes(res, 200, "si guul leh ayaa ardayga shaqada loogu bilaabay");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const deleteStudent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+      include: {
+        leaderOf: true,
+        payments: { where: { payment: { status: { not: "PAID" } } } },
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan mid jira maaha");
+      return;
+    }
+
+    if (student.payments.length > 0) {
+      shorRes(res, 400, "ardaygan wali lacagbaa lagu leeyahay");
+      return;
+    }
+
+    const deleted = await prisma.$transaction(async (tx) => {
+      if (student.leaderOf) {
+        await tx.halaqa.update({
+          where: { id: student.leaderOf.id },
+          data: {
+            leaderId: null,
+          },
+        });
+      }
+      await tx.studentParent.deleteMany({
+        where: { studentId: Number(id) },
+      });
+
+      await tx.attendance.deleteMany({
+        where: {
+          studentId: student.id,
+        },
+      });
+
+      await tx.result.deleteMany({
+        where: {
+          studentId: student.id,
+        },
+      });
+
+      await tx.paymentStudent.deleteMany({
+        where: {
+          studentId: student.id,
+        },
+      });
+
+      await tx.subcis.deleteMany({
+        where: {
+          studentId: student.id,
+        },
+      });
+
+      await tx.user.delete({
+        where: {
+          id: student.userId,
+        },
+      });
+
+      await tx.student.delete({
+        where: { id: student.id },
+      });
+    });
+
+    shorRes(res, 200, "ardayga si guul leh ayaa loo saray");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const getAllStudents = async (req: AuthRequest, res: Response) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      classId,
+      halaqaId,
+      gender,
+      active,
+    } = req.query;
+    const skip = Number(page) - 1 * Number(limit);
+
+    const where: any = {};
+
+    if (search) {
+      where.user = {
+        OR: [
+          { fullName: { contains: search as string, mode: "insensitive" } },
+          { email: { contains: search as string, mode: "insensitive" } },
+          { phone: { contains: search as string } },
+        ],
+      };
+    }
+
+    if (classId) {
+      where.classId = Number(classId);
+    }
+
+    if (halaqaId) {
+      where.halaqaId = Number(halaqaId);
+    }
+
+    if (gender) {
+      where.gender = gender;
+    }
+
+    if (active !== undefined) {
+      where.active = active === "true";
+    }
+
+    const [student, total] = await Promise.all([
+      await prisma.student.findMany({
+        where,
+        skip,
+        take: Number(limit),
+        include: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              phone: true,
+              image: true,
+            },
+          },
+          class: true,
+          halaqa: true,
+        },
+        orderBy: { id: "desc" },
+      }),
+      prisma.student.count({ where }),
+    ]);
+
+    shorRes(res, 200, "ardayda si guul leh ayaa loo helay", {
+      data: student,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    });
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const getStudentById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            phone: true,
+            image: true,
+          },
+        },
+        class: {
+          select: {
+            teacher: {
+              include: { user: { select: { fullName: true } } },
+            },
+          },
+        },
+        leaderOf: true,
+        parents: {
+          include: {
+            parent: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    fullName: true,
+                    email: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        halaqa: {
+          select: {
+            teacher: {
+              include: { user: { select: { fullName: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan mid jira maaha");
+      return;
+    }
+
+    shorRes(res, 200, "ardayga si guul leh ayaa loo helay", student);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+export const assignToClass = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { classId } = req.body;
+
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { id: Number(id) },
+      include: { halaqa: true, class: true },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardayga lama helin");
+      return;
+    }
+
+    if (classId) {
+      const classExists = await prisma.class.findUnique({
+        where: { id: classId },
+      });
+      if (!classExists) {
+        shorRes(res, 404, "fasalka lama helin");
+        return;
+      }
+    }
+    if (student.classId && classId && student.classId === classId) {
+      shorRes(
+        res,
+        400,
+        `ardaygan hore ayuu fasalkan uga tirsanaa ${student.class?.name}`,
+      );
+      return;
+    }
+
+    let newHalaqaId = student.halaqaId;
+    if (student.halaqa && classId && student.halaqa.classId !== classId) {
+      newHalaqaId = null;
+    }
+
+    const updated = await prisma.student.update({
+      where: { id: Number(id) },
+      data: {
+        classId: classId || null,
+        halaqaId: newHalaqaId,
+      },
+      include: {
+        user: { select: { fullName: true } },
+        class: true,
+        halaqa: true,
+      },
+    });
+
+    shorRes(res, 200, "ardayga fasalka si guul leh ayaa loogu daray", updated);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const assignToHalaqa = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { halaqaId } = req.body;
+
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    if (!halaqaId) {
+      shorRes(res, 400, "fadlan xalqada id-geeda gali");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+      include: { halaqa: true },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    if (student.halaqaId && halaqaId && student.halaqaId === halaqaId) {
+      shorRes(res, 400, "ardaygan hore ay");
+      return;
+    }
+
+    if (halaqaId) {
+      const existingHalaqa = await prisma.halaqa.findUnique({
+        where: { id: halaqaId },
+      });
+
+      if (!existingHalaqa) {
+        shorRes(res, 404, "xaldadan mid jirta maaha");
+        return;
+      }
+
+      if (student.classId && student.classId !== existingHalaqa.classId) {
+        shorRes(res, 400, "xalqadan kama tirsana fasalka ardaygan");
+        return;
+      }
+      if (!student.classId) {
+        await prisma.student.update({
+          where: { id: Number(id) },
+          data: {
+            classId: existingHalaqa.classId,
+          },
+        });
+      }
+    }
+
+    const updated = await prisma.student.update({
+      where: { id: Number(id) },
+      data: { halaqaId },
+      include: {
+        class: true,
+        halaqa: true,
+        user: { select: { fullName: true } },
+      },
+    });
+    shorRes(res, 200, "ardayga si guul leh ayaa xalqada lagu daray", updated);
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const linkToParent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { parentId } = req.body;
+
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    if (!parentId) {
+      shorRes(res, 400, "fadlan gali walidka ardaygan");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    const parent = await prisma.parent.findUnique({
+      where: { id: parentId },
+    });
+
+    if (!parent) {
+      shorRes(res, 404, "walidakn ma jiro");
+      return;
+    }
+
+    const existinLink = await prisma.studentParent.findFirst({
+      where: {
+        studentId: Number(id),
+        parentId,
+      },
+    });
+
+    if (existinLink) {
+      shorRes(res, 400, "ardaygan hore ayuu walidkiisa lagu xidhay");
+      return;
+    }
+
+    const created = await prisma.studentParent.create({
+      data: {
+        studentId: Number(id),
+        parentId,
+      },
+    });
+
+    shorRes(
+      res,
+      201,
+      "ardaygan si guul leh ayaa walidkii lagu xidhay",
+      created,
+    );
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const unLinkToParent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { parentId } = req.body;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    if (!parentId) {
+      shorRes(res, 400, "fadlan gali walidka ardaygan");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    const unLink = await prisma.studentParent.findFirst({
+      where: {
+        studentId: Number(id),
+        parentId,
+      },
+    });
+
+    if (!unLink) {
+      shorRes(res, 400, "ardaygan hore ayaa looga saray qaybta walidkiisa");
+      return;
+    }
+
+    const countParents = await prisma.studentParent.count({
+      where: {
+        studentId: Number(id),
+      },
+    });
+
+    if (countParents <= 1) {
+      shorRes(res, 400, "ardaygu waa inu lee yahay ugu yaraan hal walid");
+      return;
+    }
+
+    const unLinkUpdate = await prisma.studentParent.deleteMany({
+      where: {
+        studentId: student.id,
+        parentId,
+      },
+    });
+
+    shorRes(
+      res,
+      200,
+      "ardayga si guul leh ayaa loga saray qaybta walidkiisa",
+      unLinkUpdate,
+    );
   } catch (error) {
     cathError(error, res);
   }
