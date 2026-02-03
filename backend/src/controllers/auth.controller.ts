@@ -167,54 +167,6 @@ export const loginUser = async (req: Request, res: Response) => {
   }
 };
 
-export const logout = async (req: AuthRequest, res: Response) => {
-  try {
-    if (!req.userId) {
-      res.status(400).json({
-        message: "user ID is not provided",
-      });
-      return;
-    }
-
-    const user = await prisma.user.findFirst({
-      where: {
-        id: req.userId,
-      },
-    });
-
-    if (!user) {
-      res.status(400).json({
-        message: "user not found",
-      });
-      return;
-    }
-
-    await prisma.user.update({
-      where: {
-        id: req.userId,
-      },
-      data: {
-        isLogged: false,
-      },
-    });
-
-    const token = req.headers.authorization;
-
-    if (!token) {
-      res.status(400).json({
-        message: "Already logged out",
-      });
-      return;
-    }
-
-    res.clearCookie("access_token");
-    res.clearCookie("refresh_token");
-    shorRes(res, 200, "Logged our successfully");
-  } catch (error) {
-    cathError(error, res);
-  }
-};
-
 export const whoami = async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findFirst({

@@ -1,6 +1,6 @@
-import twilio, { Twilio } from "twilio";
+import twilio from "twilio";
 
-export const client: Twilio = new (twilio as any)(
-  process.env.TWILLIO_ACCOUNT_SID,
-  process.env.TWILLIO_AUTH_TOKEN,
+export const client = twilio(
+  process.env.TWILLIO_ACCOUNT_SID!,
+  process.env.TWILLIO_AUTH_TOKEN!,
 );

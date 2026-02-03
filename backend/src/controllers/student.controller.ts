@@ -784,3 +784,446 @@ export const unLinkToParent = async (req: AuthRequest, res: Response) => {
     cathError(error, res);
   }
 };
+
+export const getStudentParents = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    const parents = await prisma.studentParent.findMany({
+      where: {
+        studentId: Number(id),
+      },
+      include: {
+        parent: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                phone: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!parents) {
+      shorRes(res, 404, "ardaygan wali laguma xidhin walidkiisa");
+      return;
+    }
+
+    shorRes(
+      res,
+      200,
+      "ardaygan walidiintiisa si guul leh ayaa loo helay",
+      parents,
+    );
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const getStudentPayment = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.query;
+
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    const where: any = { studentId: Number(id) };
+
+    if (status) {
+      where.payment = status;
+    }
+
+    const payment = await prisma.paymentStudent.findMany({
+      where,
+      include: {
+        payment: {
+          include: {
+            parent: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    fullName: true,
+                    email: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { payment: { date: "desc" } },
+    });
+
+    const totalAmount = payment.reduce((sum, a) => sum + a.amount, 0);
+    const paidAmount = payment
+      .filter((p) => p.payment.status === "PAID")
+      .reduce((sum, a) => sum + a.amount, 0);
+
+    shorRes(res, 200, "ardayda fee-gooda si guul leh ayaa loo helay", {
+      payment,
+      summary: {
+        totalAmount,
+        paidAmount,
+        pendingAmount: totalAmount - paidAmount,
+      },
+    });
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const removeLeaderHalaqa = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+      include: {
+        leaderOf: true,
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    if (!student.leaderOf) {
+      shorRes(res, 400, "ardaygan maaha aliflaha xalqada");
+      return;
+    }
+
+    const updated = await prisma.halaqa.update({
+      where: {
+        id: student.leaderOf.id,
+      },
+      data: {
+        leaderId: null,
+      },
+    });
+
+    shorRes(res, 200, "aliflaha xalqada si guul leh ayaa loo saaray");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const setHalaqaLeader = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { halaqaId } = req.body;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    if (!halaqaId) {
+      shorRes(res, 400, "xalqada id-geeda waa lo bahan yahay");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+      include: {
+        halaqa: true,
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    const halaqa = await prisma.halaqa.findUnique({
+      where: {
+        id: halaqaId,
+      },
+    });
+
+    if (!halaqa) {
+      shorRes(res, 404, "xalqadan mid jirta maaha");
+      return;
+    }
+
+    if (student.classId !== student.halaqa?.classId) {
+      shorRes(res, 400, "xalqadan maaha fasalka ardaygan");
+      return;
+    }
+
+    if (student.halaqaId !== halaqaId) {
+      shorRes(res, 400, "xalqadan ardaygan kama tirsana");
+      return;
+    }
+    const updated = await prisma.halaqa.update({
+      where: {
+        id: halaqaId,
+      },
+      data: {
+        leaderId: student.id,
+      },
+      include: {
+        students: {
+          include: {
+            user: {
+              select: {
+                fullName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    shorRes(
+      res,
+      200,
+      "ardaygan si guul leh ayaa loga dhigay aliflaha xalqadan",
+      updated,
+    );
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const studentProgressSubcis = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    const { id } = req.params;
+    const { startDate, endDate, level } = req.query;
+
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    const where: any = { studentId: Number(id) };
+
+    if (level) {
+      where.level = level;
+    }
+
+    if (startDate) {
+      where.date = {};
+      if (startDate) where.date.gte = new Date(startDate as string);
+      if (endDate) where.date.lte = new Date(endDate as string);
+    }
+
+    const subcisProgress = await prisma.subcis.findMany({
+      where,
+      include: {
+        halaqa: true,
+      },
+      orderBy: { date: "desc" },
+    });
+
+    const uniquieJuz = [...new Set(subcisProgress.map((s) => s.juz))];
+    const levelCount = {
+      GOOD: subcisProgress.filter((s) => s.level === "GOOD").length,
+      AVERAGE: subcisProgress.filter((s) => s.level === "AVERAGE").length,
+      BAD: subcisProgress.filter((s) => s.level === "BAD").length,
+    };
+
+    shorRes(res, 200, "ardayga si guul leh ayaa loo helay heerkiisa subcis", {
+      data: subcisProgress,
+      summary: {
+        totalRecord: subcisProgress.length,
+        juzComplete: uniquieJuz.length,
+        juzLis: uniquieJuz,
+        level: levelCount,
+      },
+    });
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const resulStudent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { examId } = req.query;
+
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    const where: any = { studentId: Number(id) };
+
+    if (examId) {
+      where.examId = Number(examId);
+    }
+
+    const results = await prisma.result.findMany({
+      where,
+      include: {
+        exam: {
+          include: { class: true },
+        },
+      },
+      orderBy: { exam: { date: "desc" } },
+    });
+
+    const totalMarks = results.reduce((sum, r) => sum + r.marks, 0);
+    const average =
+      results.length > 0 ? Number((totalMarks / results.length).toFixed(2)) : 0;
+    const highest =
+      results.length > 0 ? Math.max(...results.map((r) => r.marks)) : 0;
+    const lowest =
+      results.length > 0 ? Math.min(...results.map((r) => r.marks)) : 0;
+
+    let grade = "F";
+
+    if (average >= 90 && average <= 100) {
+      grade = "A";
+    } else if (average >= 80) {
+      grade = "B";
+    } else if (average >= 70) {
+      grade = "C";
+    } else if (average >= 60) {
+      grade = "D";
+    }
+
+    shorRes(res, 200, "natiijooyinka ardaygan si guul leh ayaa loo helay", {
+      data: results,
+      summary: {
+        totalExams: results.length,
+        totalMarks,
+        average,
+        highest,
+        lowest,
+        grade,
+      },
+    });
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const getStudentAttendance = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { startDate, endDate, month, status } = req.query;
+
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga ardayga sax");
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { id: Number(id) },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan majiro");
+      return;
+    }
+
+    const where: any = { studentId: Number(id) };
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (month) {
+      const [year, m] = (month as string).split("-");
+      const start = new Date(Number(year), Number(m) - 1, 1);
+      const end = new Date(Number(year), Number(m), 0);
+      where.date = { gte: start, lte: end };
+    } else if (startDate || endDate) {
+      where.date = {};
+      if (startDate) where.date.gte = new Date(startDate as string);
+      if (endDate) where.date.lte = new Date(endDate as string);
+    }
+
+    const attendance = await prisma.attendance.findMany({
+      where,
+      orderBy: { date: "desc" },
+    });
+
+    const total = attendance.length;
+    const present = attendance.filter((a) => a.status === "PRESENT").length;
+    const absent = attendance.filter((a) => a.status === "ABSENT").length;
+    const percentage = total > 0 ? ((present / total) * 100).toFixed(2) : "0";
+
+    shorRes(res, 200, "imaanshaha si guul leh ayaa loo helay", {
+      data: attendance,
+      summary: {
+        total,
+        present,
+        absent,
+        percentage,
+      },
+    });
+  } catch (error) {
+    cathError(error, res);
+  }
+};

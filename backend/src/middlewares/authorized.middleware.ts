@@ -21,8 +21,7 @@ export const authorized = (role: string[]) => {
 
       if (!role.includes(user.role)) {
         res.status(403).json({
-          message:
-            "Forbidden: your role is not allowed to access this resource.",
+          message: "Forbidden: looma ogala doorkaga inuu arko qaybtan",
         });
         return;
       }
