@@ -388,8 +388,7 @@ export const getAllStudents = async (req: AuthRequest, res: Response) => {
       gender,
       active,
     } = req.query;
-    const skip = Number(page) - 1 * Number(limit);
-
+    const skip = (Number(page) - 1) * Number(limit);
     const where: any = {};
 
     if (search) {

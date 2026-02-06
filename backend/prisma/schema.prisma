@@ -48,6 +48,13 @@ enum SabaqLevel {
   BAD
 }
 
+enum TargetStatus {
+  PENDING
+  IN_PROGRESS
+  ACHIEVED
+  FAILED
+}
+
 model User {
   id            Int            @id @default(autoincrement())
   fullName      String
@@ -104,11 +111,12 @@ model Student {
 
   leaderOf Halaqa? @relation("HalaqaLeader")
 
-  parents    StudentParent[]
-  attendance Attendance[]
-  results    Result[]
-  subac      Subcis[]
-  payments   PaymentStudent[]
+  parents             StudentParent[]
+  attendance          Attendance[]
+  results             Result[]
+  subac               Subcis[]
+  payments            PaymentStudent[]
+  memorizationTargets MemorizationTarget[]
 }
 
 model StudentParent {
@@ -122,6 +130,34 @@ model StudentParent {
   @@unique([studentId, parentId])
 }
 
+model MemorizationTarget {
+  id        Int @id @default(autoincrement())
+  studentId Int
+  classId   Int
+  halaqaId  Int
+
+  startSurah   String
+  startAyah    Int
+  targetSurah  String
+  targetAyah   Int
+  startDate    DateTime     @default(now())
+  dueDate      DateTime
+  completeDate DateTime
+  status       TargetStatus @default(PENDING)
+  currentSurah String
+  currentAyah  Int
+
+  student Student @relation(fields: [studentId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+  halaqa  Halaqa  @relation(fields: [halaqaId], references: [id])
+
+  @@index([studentId])
+  @@index([classId])
+  @@index([halaqaId])
+  @@index([status])
+  @@index([dueDate])
+}
+
 model Class {
   id           Int    @id @default(autoincrement())
   name         String
@@ -129,11 +165,12 @@ model Class {
   rank         Int?
   averageScore Float?
 
-  teacher   Teacher         @relation(fields: [teacherId], references: [id])
-  halaqas   Halaqa[]
-  students  Student[]
-  schedules ClassSchedule[]
-  exams     Exam[]
+  teacher             Teacher              @relation(fields: [teacherId], references: [id])
+  halaqas             Halaqa[]
+  students            Student[]
+  schedules           ClassSchedule[]
+  exams               Exam[]
+  memorizationTargets MemorizationTarget[]
 }
 
 model ClassSchedule {
@@ -149,10 +186,9 @@ model ClassSchedule {
 }
 
 model Teacher {
-  id     Int     @id @default(autoincrement())
-  userId Int     @unique
+  id     Int   @id @default(autoincrement())
+  userId Int   @unique
   salary Float
- 
 
   user       User                @relation(fields: [userId], references: [id])
   classes    Class[]
@@ -195,7 +231,8 @@ model Halaqa {
   leader   Student?  @relation("HalaqaLeader", fields: [leaderId], references: [id])
   students Student[] @relation("HalaqaStudents")
 
-  subac Subcis[]
+  subac               Subcis[]
+  memorizationTargets MemorizationTarget[]
 }
 
 model Subcis {
