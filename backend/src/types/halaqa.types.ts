@@ -3,3 +3,9 @@ export interface ICreateHalaqa {
   teacherId: number;
   classId: number;
 }
+
+export interface IUpdateHalaqa {
+  name: string;
+  teacherId: number;
+  classId: number;
+}
