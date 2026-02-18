@@ -520,3 +520,213 @@ export const changeTeacher = async (req: AuthRequest, res: Response) => {
     cathError(error, res);
   }
 };
+
+export const getHalaqaSubcisProgress = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    const { id } = req.params;
+    const {
+      page = 1,
+      limit = 10,
+      studentId,
+      level,
+      startDate,
+      endDate,
+    } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga xalqada sax");
+      return;
+    }
+
+    const halaqa = await prisma.halaqa.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!halaqa) {
+      shorRes(res, 404, "xaldan mid jirta maaha");
+      return;
+    }
+
+    const where: any = { halaqaId: Number(id) };
+
+    if (studentId) {
+      where.studentId = Number(studentId);
+    }
+
+    if (level) {
+      where.level = level;
+    }
+
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) where.date.gte = new Date(startDate as string);
+      if (endDate) where.date.lte = new Date(startDate as string);
+    }
+
+    const [record, total] = await Promise.all([
+      prisma.subcis.findFirst({
+        where,
+        skip,
+        take: Number(limit),
+        include: {
+          student: {
+            select: {
+              user: {
+                select: {
+                  fullName: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { date: "desc" },
+      }),
+      prisma.subcis.count({ where }),
+    ]);
+
+    const countLevel = {
+      GOOD: await prisma.subcis.count({ where: { ...where, level: "GOOD" } }),
+      AVERAGE: await prisma.subcis.count({
+        where: { ...where, level: "AVERAGE" },
+      }),
+      BAD: await prisma.subcis.count({ where: { ...where, level: "BAD" } }),
+    };
+
+    shorRes(res, 200, "ardayda subciskoodi si guul leh ayaa loo helay", {
+      date: record,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+      summary: {
+        total,
+        levelBreakDown: countLevel,
+      },
+    });
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const addHalaqaStudents = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { studentIds } = req.body;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga xalqada sax");
+      return;
+    }
+
+    if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+      shorRes(res, 400, "fadlan gali ardayda lagu darayo xalqada");
+      return;
+    }
+
+    const halaqa = await prisma.halaqa.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!halaqa) {
+      shorRes(res, 404, "xalqadan mid jirta maaha ");
+      return;
+    }
+
+    const students = await prisma.student.findMany({
+      where: {
+        id: { in: studentIds },
+      },
+    });
+
+    if (students.length !== studentIds.length) {
+      shorRes(res, 404, "ardayda qaar kamid ah majiraan");
+      return;
+    }
+
+    const wrongClass = students.filter((s) => s.classId !== halaqa.classId);
+    if (wrongClass.length > 0) {
+      shorRes(res, 400, "ardayda qaar kama tirsana fasalka xalqadan");
+      return;
+    }
+
+    await prisma.student.updateMany({
+      where: { id: { in: studentIds } },
+      data: { halaqaId: Number(id) },
+    });
+
+    shorRes(res, 200, "ardayga si guul leh ayaa lagu daray xalqada");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const removeHalaqaStudents = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { studentIds } = req.body;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga xalqada sax");
+      return;
+    }
+
+    if (!studentIds) {
+      shorRes(res, 400, "fadlan gali ardayga id-giisa");
+      return;
+    }
+
+    const halaqa = await prisma.halaqa.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!halaqa) {
+      shorRes(res, 404, "xalqadan mid jirta maaha ");
+      return;
+    }
+
+    const student = await prisma.student.findFirst({
+      where: {
+        id: studentIds,
+        halaqaId: Number(id),
+      },
+    });
+
+    if (!student) {
+      shorRes(res, 404, "ardaygan kuma jiro halaqadan");
+      return;
+    }
+
+    if (halaqa.leaderId && studentIds) {
+      await prisma.halaqa.update({
+        where: {
+          id: Number(id),
+        },
+        data: {
+          leaderId: null,
+        },
+      });
+    }
+
+    await prisma.student.update({
+      where: {
+        id: studentIds,
+        halaqaId: Number(id),
+      },
+      data: { halaqaId: null },
+    });
+
+    shorRes(res, 200, "ardayga si guul leh ayaa xalqada looga saaray");
+  } catch (error) {
+    cathError(error, res);
+  }
+};
