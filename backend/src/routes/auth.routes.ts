@@ -33,7 +33,7 @@ import { authorized } from "../middlewares/authorized.middleware.js";
 import { Role } from "../generated/prisma/enums.js";
 const route = Router();
 
-route.post("/create", signupSchemas, validateMiddleware, register);
+route.post("/create", register);
 
 route.post("/login", loginSchema, validateMiddleware, loginUser);
 

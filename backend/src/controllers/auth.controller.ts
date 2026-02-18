@@ -61,7 +61,7 @@ export const registerUser = [
         },
       });
 
-      if (!email) {
+      if (email) {
         res.status(400).json({
           message: "email already exist",
         });
@@ -74,7 +74,7 @@ export const registerUser = [
         },
       });
 
-      if (!phone) {
+      if (phone) {
         res.status(400).json({
           message: "email already exist",
         });
