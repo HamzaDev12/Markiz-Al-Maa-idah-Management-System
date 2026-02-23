@@ -32,11 +32,10 @@ const storage = multer.diskStorage({
     cb(null, file.originalname);
   },
 });
-
-const uploads = multer({ storage });
+const upload = multer({ storage });
 
 export const registerUser = [
-  uploads.single("image"),
+  upload.single("image"),
   async (req: Request, res: Response) => {
     try {
       const data: ICreateUser = req.body;
@@ -104,7 +103,7 @@ export const registerUser = [
       if (!newUser) {
         throw new Error("Error while creating new user");
       }
-      generateToken(newUser.id, res);
+      // generateToken(newUser.id, res);
       res.status(201).json({
         message: "Successfully Created",
         user: newUser,

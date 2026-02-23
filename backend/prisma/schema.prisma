@@ -142,7 +142,7 @@ model MemorizationTarget {
   targetAyah   Int
   startDate    DateTime     @default(now())
   dueDate      DateTime
-  completeDate DateTime
+  completeDate DateTime?
   status       TargetStatus @default(PENDING)
   currentSurah String
   currentAyah  Int
