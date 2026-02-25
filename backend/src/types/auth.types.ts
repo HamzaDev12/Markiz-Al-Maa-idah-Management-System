@@ -1,5 +1,5 @@
 export interface ICreateUser {
-  name: string;
+  fullName: string;
   password: string;
   role: string;
   confirm: string;
@@ -14,14 +14,14 @@ export interface ILoginUser {
 
 export interface IUpdateUserByAdmin {
   id: number;
-  name: string;
+  fullName: string;
   role: string;
   phone: string;
 }
 
 export interface IUpdateUserBySelf {
   id: number;
-  name: string;
+  fullName: string;
   OldPassword: string;
   role: string;
   newPassword: string;
@@ -32,7 +32,7 @@ export interface IUpdateUserBySelf {
 
 export interface ISendMessage {
   email: string;
-  name: string;
+  fullName: string;
   message: string;
   subject: string;
 }

@@ -32,6 +32,7 @@ const storage = multer.diskStorage({
     cb(null, file.originalname);
   },
 });
+
 const upload = multer({ storage });
 
 export const registerUser = [
@@ -42,7 +43,7 @@ export const registerUser = [
       const image = req.file ? req.file.filename : null;
       if (
         !data.confirm ||
-        !data.name ||
+        !data.fullName ||
         !data.password ||
         !data.phone ||
         !data.role ||
@@ -75,7 +76,7 @@ export const registerUser = [
 
       if (phone) {
         res.status(400).json({
-          message: "email already exist",
+          message: "phone number already exist",
         });
         return;
       }
@@ -92,7 +93,7 @@ export const registerUser = [
       const newUser = await prisma.user.create({
         data: {
           email: data.email,
-          fullName: data.name,
+          fullName: data.fullName,
           password: hashPassword,
           role: data.role as Role,
           phone: data.phone,
@@ -101,9 +102,11 @@ export const registerUser = [
       });
 
       if (!newUser) {
-        throw new Error("Error while creating new user");
+        res.status(404).json({
+          message: "User not found",
+        });
+        return;
       }
-      // generateToken(newUser.id, res);
       res.status(201).json({
         message: "Successfully Created",
         user: newUser,
@@ -281,7 +284,7 @@ export const updateUserByAdmin = async (req: Request, res: Response) => {
       return;
     }
 
-    if (!data.name || !data.phone || !data.role) {
+    if (!data.fullName || !data.phone || !data.role) {
       shorRes(res, 400, "please fill all inputs");
       return;
     }
@@ -302,7 +305,7 @@ export const updateUserByAdmin = async (req: Request, res: Response) => {
         id: data.id,
       },
       data: {
-        fullName: data.name,
+        fullName: data.fullName,
         role: data.role as Role,
         phone: data.phone,
       },
@@ -324,7 +327,7 @@ export const updateUserByself = async (req: AuthRequest, res: Response) => {
       data.OldPassword === "" ||
       data.confirm === "" ||
       data.email === "" ||
-      data.name === "" ||
+      data.fullName === "" ||
       data.newPassword === "" ||
       data.phone === "" ||
       data.role === ""
@@ -361,7 +364,7 @@ export const updateUserByself = async (req: AuthRequest, res: Response) => {
         id: data.id,
       },
       data: {
-        fullName: data.name,
+        fullName: data.fullName,
         email: data.email,
         phone: data.phone,
         role: data.role as Role,
@@ -390,7 +393,12 @@ export const updateSome = async (req: AuthRequest, res: Response) => {
       });
       return;
     }
-    if (!data.OldPassword || !data.confirm || !data.name || !data.newPassword) {
+    if (
+      !data.OldPassword ||
+      !data.confirm ||
+      !data.fullName ||
+      !data.newPassword
+    ) {
       shorRes(res, 400, "please fill all inputs");
       return;
     }
@@ -413,7 +421,7 @@ export const updateSome = async (req: AuthRequest, res: Response) => {
         id: data.id,
       },
       data: {
-        fullName: data.name,
+        fullName: data.fullName,
         password: hash,
         role: data.role as Role,
       },
@@ -436,12 +444,12 @@ export const updateName = async (req: AuthRequest, res: Response) => {
     }
 
     if (!fullName || fullName.trim().length < 3) {
-      shorRes(res, 400, "Please enter a valid name");
+      shorRes(res, 400, "Please enter a valid fullName");
       return;
     }
 
     if (typeof fullName !== "string") {
-      shorRes(res, 400, "Invalid name format");
+      shorRes(res, 400, "Invalid fullName format");
     }
 
     await prisma.user.update({
@@ -449,7 +457,7 @@ export const updateName = async (req: AuthRequest, res: Response) => {
       data: { fullName },
     });
 
-    shorRes(res, 200, "Successfully changed your name");
+    shorRes(res, 200, "Successfully changed your fullName");
   } catch (error) {
     cathError(error, res);
   }
@@ -961,9 +969,9 @@ export const refreshToken = async (req: Request, res: Response) => {
 
 export const sendEmailMessages = async (req: Request, res: Response) => {
   try {
-    const { message, email, name, subject } = req.body as ISendMessage;
+    const { message, email, fullName, subject } = req.body as ISendMessage;
 
-    if (!message || !email || !name || !subject) {
+    if (!message || !email || !fullName || !subject) {
       shorRes(res, 400, "please fill inputs");
       return;
     }

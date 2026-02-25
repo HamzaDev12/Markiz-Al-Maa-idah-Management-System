@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { register } from "ts-node";
 import { loginSchema, signupSchemas } from "../schemas/auth.schemas.js";
 import { validateMiddleware } from "../middlewares/validate.middleware.js";
 import {
@@ -13,6 +12,7 @@ import {
   getUserRecyclePin,
   loginUser,
   refreshToken,
+  registerUser,
   resetPassword,
   restorUser,
   sendEmailCode,
@@ -31,10 +31,10 @@ import {
 import { authenticationMiddleware } from "../middlewares/auth.middleware.js";
 import { authorized } from "../middlewares/authorized.middleware.js";
 import { Role } from "../generated/prisma/enums.js";
+import multer from "multer";
 const route = Router();
 
-route.post("/create", register);
-
+route.post("/create", registerUser);
 route.post("/login", loginSchema, validateMiddleware, loginUser);
 
 route.get("/whoami", authenticationMiddleware, whoami);
