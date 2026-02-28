@@ -7,6 +7,8 @@ import {
   deleteParent,
   getAllParenst,
   getParentById,
+  getStudentParent,
+  paymentHistory,
   updateParent,
 } from "../controllers/parent.controller.js";
 const route = Router();
@@ -44,6 +46,20 @@ route.get(
   authenticationMiddleware,
   authorized([Role.PARENT]),
   getParentById,
+);
+
+route.get(
+  "/getParenstStudents/:id",
+  authenticationMiddleware,
+  authorized([Role.ADMIN, Role.PARENT]),
+  getStudentParent,
+);
+
+route.get(
+  "/getPaymentHistory/:id",
+  authenticationMiddleware,
+  authorized([Role.ADMIN]),
+  paymentHistory,
 );
 
 export default route;

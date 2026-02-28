@@ -283,3 +283,155 @@ export const getParentById = async (req: AuthRequest, res: Response) => {
     cathError(error, res);
   }
 };
+
+export const getStudentParent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga sax");
+      return;
+    }
+
+    const parent = await prisma.parent.findUnique({
+      where: {
+        id: Number(id),
+      },
+    });
+
+    if (!parent) {
+      shorRes(res, 404, "waalidkan mid jira maaha");
+      return;
+    }
+
+    const parentStudent = await prisma.studentParent.findMany({
+      where: {
+        parentId: Number(id),
+      },
+      include: {
+        student: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                image: true,
+              },
+            },
+            class: {
+              select: {
+                name: true,
+              },
+            },
+            halaqa: {
+              select: {
+                name: true,
+              },
+            },
+            memorizationTargets: {
+              select: {
+                currentSurah: true,
+                currentAyah: true,
+                targetSurah: true,
+                targetAyah: true,
+              },
+            },
+            attendance: {
+              orderBy: { date: "desc" },
+              take: 5,
+              select: {
+                date: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (parentStudent.length === 0) {
+      shorRes(res, 404, "waalidkan wali ardaydiisa, laguma xidhin");
+      return;
+    }
+
+    shorRes(
+      res,
+      200,
+      "waalidka ardaydiisa si guul leh ayaa loo helay",
+      parentStudent,
+    );
+  } catch (error) {
+    cathError(error, res);
+  }
+};
+
+export const paymentHistory = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || isNaN(Number(id))) {
+      shorRes(res, 400, "fadlan id-ga sax");
+      return;
+    }
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        parentId: Number(id),
+      },
+      include: {
+        parent: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                image: true,
+                email: true,
+              },
+            },
+          },
+        },
+        items: {
+          select: {
+            student: {
+              include: {
+                user: {
+                  select: {
+                    fullName: true,
+                  },
+                },
+                class: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const paidAmount = payments
+      .filter((p) => p.status === "PAID")
+      .reduce((sum, p) => sum + p.totalAmount, 0);
+    const totalPendding = payments
+      .filter((p) => p.status !== "PAID")
+      .reduce((sum, p) => sum + p.totalAmount, 0);
+    const totalAmount = paidAmount + totalPendding;
+
+    if (payments.length === 0) {
+      shorRes(res, 404, "waalidkan wax fee ah ma bixin");
+      return;
+    }
+
+    shorRes(res, 200, "si guul leh ayaa loo helay lacagaha", {
+      data: payments,
+      summary: {
+        paidAmount,
+        totalPendding,
+        totalAmount,
+      },
+    });
+  } catch (error) {
+    cathError(error, res);
+  }
+};
